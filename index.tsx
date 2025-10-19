@@ -258,7 +258,22 @@ function App() {
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const insightsPrompt = `Based on the following clinical summary, provide actionable insights. Include sections for "Potential Next Steps", "Key Risks to Monitor", and "Suggested Patient Questions". Format the output clearly.\n\nSUMMARY:\n${JSON.stringify(currentSummary.summary, null, 2)}`;
+        const insightsPrompt = `You are a clinical decision support assistant operating within the UK healthcare system. Based on the provided clinical summary, generate actionable insights for a clinician. All recommendations must be explicitly aligned with the latest UK-based NICE (National Institute for Health and Care Excellence) and CKS (Clinical Knowledge Summaries) guidelines. The entire response must be in British English.
+
+Please structure your response with the following clear, Markdown-formatted sections:
+
+- **Potential Next Steps (NICE/CKS Aligned):**
+  - Detail suggested actions, further investigations, or potential referrals based on the relevant guidelines.
+
+- **Key Risks to Monitor:**
+  - Enumerate potential complications, adverse effects, or clinical red flags that require monitoring.
+
+- **Patient Communication & Counselling:**
+  - Provide key points for discussion with the patient, including potential questions they might have or information to share, framed in a patient-friendly manner suitable for a UK context.
+
+---
+**PATIENT SUMMARY:**
+${JSON.stringify(currentSummary.summary, null, 2)}`;
         
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
