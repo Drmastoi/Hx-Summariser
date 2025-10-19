@@ -323,7 +323,9 @@ function App() {
       if (patientToUpdate && latestExistingSummary) {
         finalPrompt = `Act as a clinical assistant responsible for patient records. A patient has presented with new acute concerns. Based on these and their previous clinical summary, provide an updated summary.
 
-Crucially, within the "Pending Tasks and action Plan" section, you must explicitly document a detailed treatment plan for the new acute concerns, formatted clearly for inclusion in an Electronic Health Record (EHR). This plan must be actionable and follow standard clinical practice. Also, generate a long-term management plan and identify key changes from the previous summary.
+Crucially, within the "Pending Tasks and action Plan" section, you must explicitly document a detailed treatment plan for the new acute concerns, formatted clearly for inclusion in an Electronic Health Record (EHR). This plan must be actionable and follow standard UK clinical practice (NICE/CKS guidelines).
+
+The plan for the new concerns should include specific management instructions (e.g., "Started on Amoxicillin 500mg three times daily," "Prescribed Lactulose 10ml twice daily"). Also, generate a long-term management plan and identify key changes from the previous summary.
 
 PREVIOUS SUMMARY:
 ${JSON.stringify(latestExistingSummary.summary)}
@@ -332,7 +334,9 @@ NEW ACUTE CONCERNS:
 ${prompt}`;
         schemaForRequest = updateSummaryResponseSchema;
       } else {
-        finalPrompt = `Act as a clinical assistant responsible for patient records. Create a concise, structured clinical summary from the information provided. For any acute issues identified, you must explicitly document a detailed treatment plan within the "Pending Tasks and action Plan" section. This plan must be formatted clearly for inclusion in an Electronic Health Record (EHR), be actionable, and follow standard clinical practice. Also, include a suggested long-term management plan.
+        finalPrompt = `Act as a clinical assistant responsible for patient records. Create a concise, structured clinical summary from the information provided. For any acute issues identified, you must explicitly document a detailed treatment plan within the "Pending Tasks and action Plan" section. This plan must be formatted clearly for inclusion in an Electronic Health Record (EHR), be actionable, and follow standard UK clinical practice (NICE/CKS guidelines).
+
+The plan should include specific management instructions (e.g., "Started on Amoxicillin 500mg three times daily," "Prescribed Lactulose 10ml twice daily") and a suggested long-term management plan.
 
 PATIENT INFORMATION:
 ${prompt}`;
@@ -351,6 +355,22 @@ ${prompt}`;
 
       const jsonText = result.text.trim();
       const newSummaryData: StructuredResponse = JSON.parse(jsonText);
+
+      // --- Programmatically handle safety netting advice ---
+      const SAFETY_NETTING_ADVICE = "If symptoms worsen, or if new symptoms develop, please seek urgent medical advice by calling 111, your GP surgery, or 999 in an emergency.";
+
+      // Ensure the 'Pending Tasks and action Plan' exists and is an array
+      if (!newSummaryData['Pending Tasks and action Plan'] || !Array.isArray(newSummaryData['Pending Tasks and action Plan'])) {
+        newSummaryData['Pending Tasks and action Plan'] = [];
+      }
+      // Filter out any existing/similar safety netting advice to prevent duplicates
+      newSummaryData['Pending Tasks and action Plan'] = newSummaryData['Pending Tasks and action Plan'].filter(
+          item => !item.toLowerCase().includes('symptoms worsen') && !item.toLowerCase().includes('999')
+      );
+      // Add the standardized advice to the end of the plan
+      newSummaryData['Pending Tasks and action Plan'].push(SAFETY_NETTING_ADVICE);
+      // --- End of safety netting logic ---
+
       const newSummaryRecord: SummaryRecord = {
         summary: newSummaryData,
         timestamp: new Date().toISOString(),
@@ -520,20 +540,15 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
     setIsExportingPdf(true);
     setError(null);
   
-    const pdfExportContainer = document.createElement('div');
-    pdfExportContainer.style.position = 'absolute';
-    pdfExportContainer.style.left = '-9999px';
-    pdfExportContainer.style.width = '8.5in';
-  
-    const escapeHtml = (unsafe: string) =>
-      unsafe
+    const escapeHtml = (unsafe: string | undefined | null) =>
+      (unsafe || '')
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
   
-    let htmlContent = `
+    let contentHtml = `
       <div class="pdf-document">
         <div class="report-header">
           <h1>Clinical Summary Report</h1>
@@ -544,92 +559,82 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
     `;
   
     const { summary } = currentSummary;
-    const sectionsOrder = ['Key Changes', 'Acute Issues', 'Pending Tasks and action Plan', 'Past medical history'];
+    const sectionsOrder: (keyof StructuredResponse)[] = ['Key Changes', 'Acute Issues', 'Pending Tasks and action Plan', 'Past medical history'];
   
     sectionsOrder.forEach(key => {
-      if (summary[key] && Array.isArray(summary[key]) && summary[key].length > 0) {
-        htmlContent += `<div class="section">`;
-        htmlContent += `<h3 class="section-title">${escapeHtml(key)}</h3>`;
-        htmlContent += '<ul class="summary-list">';
-        summary[key].forEach((item: string) => {
-          htmlContent += `<li>${escapeHtml(item)}</li>`;
-        });
-        htmlContent += '</ul></div>';
-      }
+        const sectionData = summary[key];
+        if (sectionData && Array.isArray(sectionData) && sectionData.length > 0) {
+            contentHtml += `<div class="section">`;
+            contentHtml += `<h3 class="section-title">${escapeHtml(key)}</h3>`;
+            contentHtml += '<ul class="summary-list">';
+            sectionData.forEach((item: string) => {
+                contentHtml += `<li>${escapeHtml(item)}</li>`;
+            });
+            contentHtml += '</ul></div>';
+        }
     });
   
     if (insights) {
-      htmlContent += `<div class="page-break"></div><div class="section"><h3 class="section-title">AI-Powered Insights</h3><div class="ai-content-box">${escapeHtml(insights).replace(/\n/g, '<br>')}</div></div>`;
+      contentHtml += `<div class="page-break"></div><div class="section"><h3 class="section-title">AI-Powered Insights</h3><div class="ai-content-box">${escapeHtml(insights).replace(/\n/g, '<br>')}</div></div>`;
     }
 
     if (differentialDiagnosis && differentialDiagnosis.length > 0) {
-        htmlContent += `<div class="page-break"></div><div class="section"><h3 class="section-title">Differential Diagnosis Assistant</h3>`;
-        htmlContent += '<ul class="differential-list">';
+        contentHtml += `<div class="page-break"></div><div class="section"><h3 class="section-title">Differential Diagnosis Assistant</h3>`;
+        contentHtml += '<ul class="differential-list">';
         differentialDiagnosis.forEach(item => {
-            htmlContent += `<li class="differential-item"><strong>${escapeHtml(item.diagnosis)}</strong><span class="likelihood">Likelihood: ${escapeHtml(item.likelihood)}</span><p>${escapeHtml(item.rationale)}</p></li>`;
+            contentHtml += `<li class="differential-item"><strong>${escapeHtml(item.diagnosis)}</strong><span class="likelihood">Likelihood: ${escapeHtml(item.likelihood)}</span><p>${escapeHtml(item.rationale)}</p></li>`;
         });
-        htmlContent += '</ul></div>';
+        contentHtml += '</ul></div>';
     }
   
     if (referralLetter) {
       const specialty = referralSpecialty || 'Specialist';
-      htmlContent += `<div class="page-break"></div><div class="section"><h3 class="section-title">Draft Referral Letter to ${escapeHtml(specialty)}</h3><div class="ai-content-box">${escapeHtml(referralLetter).replace(/\n/g, '<br>')}</div></div>`;
+      contentHtml += `<div class="page-break"></div><div class="section"><h3 class="section-title">Draft Referral Letter to ${escapeHtml(specialty)}</h3><div class="ai-content-box">${escapeHtml(referralLetter).replace(/\n/g, '<br>')}</div></div>`;
     }
   
-    htmlContent += `</div>`;
+    contentHtml += `</div>`;
   
-    const style = document.createElement('style');
-    style.innerHTML = `
+    const styles = `
       /* General Document Styles */
       .pdf-document { font-family: 'Times New Roman', Times, serif; color: #000; font-size: 12pt; line-height: 1.5; }
-
       /* Header Section */
       .report-header { text-align: center; margin-bottom: 0.5in; border-bottom: 2px solid #000; padding-bottom: 0.2in; }
       .report-header h1 { font-size: 18pt; margin: 0 0 10px 0; font-weight: bold; }
       .report-header h2 { font-size: 16pt; margin: 0; font-weight: bold; }
       .report-header p { font-size: 11pt; color: #333; margin: 5px 0 0 0; }
       .report-header p em { font-size: 10pt; color: #555;}
-
       /* Section Styling */
       .section { margin-bottom: 0.3in; }
       .section-title { font-size: 14pt; font-weight: bold; margin: 0 0 0.2in 0; padding-bottom: 5px; border-bottom: 1px solid #ccc; }
       .page-break { page-break-before: always; }
       .page-break + .section .section-title { margin-top: 0; }
-
-
       /* List Styling for Summary */
       .summary-list { list-style-type: disc; padding-left: 0.3in; margin: 0; }
       .summary-list li { margin-bottom: 8px; padding-left: 5px; }
-
       /* AI Content Styling (Insights, Referral) */
-      .ai-content-box { 
-          white-space: pre-wrap; 
-          word-wrap: break-word; 
-          font-family: 'Times New Roman', Times, serif; 
-          padding: 0.15in; 
-          border: 1px solid #e0e0e0; 
-          background-color: #f9f9f9; 
-          border-radius: 4px; 
-      }
-
+      .ai-content-box { white-space: pre-wrap; word-wrap: break-word; font-family: 'Times New Roman', Times, serif; padding: 0.15in; border: 1px solid #e0e0e0; background-color: #f9f9f9; border-radius: 4px; }
       /* Differential Diagnosis List Styling */
       .differential-list { list-style-type: none; padding-left: 0; margin: 0; }
-      .differential-item { 
-          margin-bottom: 0.25in; 
-          padding: 0.2in; 
-          border: 1px solid #e5e5e5; 
-          border-radius: 4px; 
-          background-color: #fafafa;
-      }
+      .differential-item { margin-bottom: 0.25in; padding: 0.2in; border: 1px solid #e5e5e5; border-radius: 4px; background-color: #fafafa; }
       .differential-item:last-child { margin-bottom: 0; }
       .differential-item strong { display: block; font-size: 13pt; font-weight: bold; margin-bottom: 5px; }
       .likelihood { font-size: 11pt; color: #444; font-style: italic; margin-bottom: 8px; display: block; }
       .differential-item p { margin: 0; font-style: normal; color: #222; }
     `;
-  
-    pdfExportContainer.innerHTML = htmlContent;
-    pdfExportContainer.prepend(style);
-    document.body.appendChild(pdfExportContainer);
+
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${escapeHtml(selectedPatient.name)} Clinical Summary</title>
+          <style>${styles}</style>
+        </head>
+        <body>
+          ${contentHtml}
+        </body>
+      </html>
+    `;
   
     const patientName = selectedPatient.name.replace(/\s+/g, '_');
     const filename = `${patientName}_Clinical_Summary_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -642,63 +647,14 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
       jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
     };
   
-    (window as any).html2pdf().from(pdfExportContainer).set(options).save()
+    (window as any).html2pdf().from(fullHtml).set(options).save()
       .catch((err: Error) => {
         console.error("PDF generation failed:", err);
         setError("Sorry, there was an error exporting the PDF.");
       })
       .finally(() => {
-        document.body.removeChild(pdfExportContainer);
         setIsExportingPdf(false);
       });
-  };
-
-  const handleExportForEhr = () => {
-    if (!currentSummary || !selectedPatient) {
-        alert("No summary available to export for EHR.");
-        return;
-    }
-
-    let ehrText = `PATIENT NAME: ${selectedPatient.name}\n`;
-    ehrText += `DOB: ${selectedPatient.dob || 'N/A'}\n`;
-    ehrText += `NHS NUMBER: ${selectedPatient.nhsNumber || 'N/A'}\n`;
-    ehrText += `SUMMARY DATE: ${new Date(currentSummary.timestamp).toLocaleString()}\n`;
-    ehrText += `EXPORT DATE: ${new Date().toLocaleString()}\n\n`;
-
-    const { summary } = currentSummary;
-    const sectionsOrder = ['Key Changes', 'Acute Issues', 'Pending Tasks and action Plan', 'Past medical history'];
-    
-    sectionsOrder.forEach(key => {
-        if (summary[key] && Array.isArray(summary[key]) && summary[key].length > 0) {
-            ehrText += `==== ${key.toUpperCase()} ====\n`;
-            summary[key].forEach((item: string) => {
-                ehrText += `- ${item}\n`;
-            });
-            ehrText += `\n`;
-        }
-    });
-
-    if (insights) {
-        ehrText += `==== AI-POWERED INSIGHTS ====\n`;
-        ehrText += `${insights}\n\n`;
-    }
-
-    if (referralLetter) {
-        ehrText += `==== DRAFT REFERRAL LETTER TO ${referralSpecialty || 'SPECIALIST'} ====\n`;
-        ehrText += `${referralLetter}\n\n`;
-    }
-    
-    const blob = new Blob([ehrText], { type: 'text/plain;charset=utf-8' });
-    const patientName = selectedPatient.name.replace(/\s+/g, '_');
-    const filename = `${patientName}_EHR_Export_${new Date().toISOString().split('T')[0]}.txt`;
-    
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
   };
 
   const clearFiles = () => {
@@ -805,28 +761,27 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
     if (!currentSummary) {
       return !error && <p className="placeholder-text">Select a patient or create a new one to see their summary.</p>;
     }
+    const { summary } = currentSummary;
+    const sectionsOrder: (keyof StructuredResponse)[] = ['Key Changes', 'Acute Issues', 'Pending Tasks and action Plan', 'Past medical history'];
+    
     return (
       <>
-        {currentSummary.summary['Key Changes'] && currentSummary.summary['Key Changes'].length > 0 && (
-          <div className="key-changes-section response-section">
-            <h3>Key Changes</h3>
-            <ul>
-              {currentSummary.summary['Key Changes'].map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {Object.entries(currentSummary.summary).filter(([key]) => key !== 'Key Changes').map(([key, values]) => (
-          <div key={key} className={`response-section section-${toKebabCase(key)}`}>
-            <h3>{key}</h3>
-            <ul>
-              {Array.isArray(values) && values.map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        {sectionsOrder.map(key => {
+          const values = summary[key];
+          if (values && Array.isArray(values) && values.length > 0) {
+            return (
+              <div key={key} className={`response-section section-${toKebabCase(key)}`}>
+                <h3>{key}</h3>
+                <ul>
+                  {values.map((item, index) => (
+                    <li key={index}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          }
+          return null;
+        })}
       </>
     );
   };
@@ -1163,9 +1118,6 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
                         </button>
                         <button onClick={handleExportPdf} className="action-button export-button" disabled={isExportingPdf} aria-label="Export response to PDF">
                           {isExportingPdf ? 'Exporting...' : 'Export to PDF'}
-                        </button>
-                        <button onClick={handleExportForEhr} className="action-button ehr-export-button" aria-label="Export for EHR integration">
-                          Export for EHR
                         </button>
                       </div>
                     )}
