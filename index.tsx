@@ -107,6 +107,11 @@ function App() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const referralContainerRef = useRef<HTMLDivElement>(null);
 
+  // Voice Dictation state
+  const [isListening, setIsListening] = useState(false);
+  // FIX: Use `any` for SpeechRecognition type as it is not defined in the current TS scope
+  // and is shadowed by a constant with the same name.
+  const recognitionRef = useRef<any | null>(null);
 
   // Patient management state with autosave from localStorage
   const [patients, setPatients] = useState<Patient[]>(() => {
@@ -123,6 +128,10 @@ function App() {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingSummaryIndex, setViewingSummaryIndex] = useState(0);
+
+  // Check for SpeechRecognition API
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  const isSpeechRecognitionSupported = !!SpeechRecognition;
   
   // Effect to save patients to localStorage whenever they change
   useEffect(() => {
@@ -135,6 +144,60 @@ function App() {
       referralContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [referralLetter]);
+
+  // Effect to set up Speech Recognition
+  useEffect(() => {
+    if (!isSpeechRecognitionSupported) {
+      console.warn("Speech recognition not supported by this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-GB';
+
+    // FIX: Use `any` for SpeechRecognitionEvent type as it is not defined in the current TS scope.
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setPrompt(prevPrompt => (prevPrompt ? prevPrompt + ' ' : '') + transcript);
+    };
+
+    // FIX: Use `any` for SpeechRecognitionErrorEvent type as it is not defined in the current TS scope.
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error', event.error);
+      if (event.error !== 'no-speech') {
+        setError(`Speech recognition error: ${event.error}`);
+      }
+      setIsListening(false);
+    };
+    
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  }, [isSpeechRecognitionSupported]);
+  
+  const handleToggleListening = () => {
+    if (loading || !recognitionRef.current) return;
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch(e) {
+        console.error("Could not start recognition: ", e);
+        setError("Microphone not ready. Please try again.");
+      }
+    }
+  };
 
   const selectedPatient = useMemo(() => {
     return patients.find(p => p.id === selectedPatientId) || null;
@@ -533,14 +596,27 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
               </div>
           )}
           <div className="form-row">
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Enter acute concerns (e.g., new confusion, new cough)..."
-              disabled={loading}
-              aria-label="Acute concerns input"
-            />
+            <div className="input-with-mic">
+              <input
+                type="text"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Enter acute concerns (e.g., new confusion, new cough)..."
+                disabled={loading}
+                aria-label="Acute concerns input"
+              />
+              {isSpeechRecognitionSupported && (
+                <button
+                  type="button"
+                  onClick={handleToggleListening}
+                  className={`mic-button ${isListening ? 'listening' : ''}`}
+                  disabled={loading}
+                  aria-label={isListening ? 'Stop dictation' : 'Start dictation'}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+                </button>
+              )}
+            </div>
             <button type="submit" disabled={loading || (!prompt.trim() && files.length === 0)}>
               {loading ? (selectedPatient ? 'Updating Summary...' : 'Generating Summary...') : (selectedPatient ? 'Update Summary' : 'Submit')}
             </button>

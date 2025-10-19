@@ -167,6 +167,73 @@ input[type='file'] {
   cursor: not-allowed;
 }
 
+/* Dictation Button Styles */
+.input-with-mic {
+  position: relative;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-mic input {
+  padding-right: 48px; /* Make space for the mic icon inside */
+}
+
+.mic-button {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5f6368;
+}
+
+.mic-button:hover:not(:disabled) {
+  background-color: #f0f2f5;
+}
+
+.mic-button:disabled {
+  background-color: transparent;
+  color: #bdbdbd;
+}
+
+.mic-button.listening {
+  color: #d93025;
+}
+
+.mic-button.listening svg {
+  animation: pulse 1.5s infinite;
+}
+
+.mic-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .response-container {
   margin-top: 1rem;
 }

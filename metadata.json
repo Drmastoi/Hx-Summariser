@@ -1,5 +1,7 @@
 {
   "name": "Copy of Hx Summariser",
   "description": " Hx Summariser",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }
