@@ -127,6 +127,19 @@ input[type='file'] {
   cursor: not-allowed;
 }
 
+.file-list-container {
+  margin-bottom: 1.5rem;
+}
+
+.file-list-container ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .file-info {
   display: flex;
   justify-content: space-between;
@@ -134,7 +147,6 @@ input[type='file'] {
   padding: 8px 12px;
   background-color: #e8f0fe;
   border-radius: 4px;
-  margin-bottom: 1.5rem;
   font-size: 0.9em;
   color: #185abc;
   word-break: break-all;
@@ -219,6 +231,44 @@ input[type='file'] {
 .key-changes-section h3 {
   color: #d46b08;
   border-bottom-color: #ffe58f;
+}
+
+/* Enhanced styling for specific summary sections */
+.response-section.section-acute-issues,
+.response-section.section-pending-tasks-and-action-plan,
+.response-section.section-past-medical-history {
+    padding: 1rem;
+    border-radius: 4px;
+}
+
+.response-section.section-acute-issues {
+    background-color: #fff1f0;
+    border: 1px solid #ffa39e;
+}
+
+.response-section.section-acute-issues h3 {
+    color: #cf1322;
+    border-bottom-color: #ffa39e;
+}
+
+.response-section.section-pending-tasks-and-action-plan {
+    background-color: #e6f7ff;
+    border: 1px solid #91d5ff;
+}
+
+.response-section.section-pending-tasks-and-action-plan h3 {
+    color: #096dd9;
+    border-bottom-color: #91d5ff;
+}
+
+.response-section.section-past-medical-history {
+    background-color: #f6f6f6;
+    border: 1px solid #d9d9d9;
+}
+
+.response-section.section-past-medical-history h3 {
+    color: #595959;
+    border-bottom-color: #d9d9d9;
 }
 
 .error-message {
@@ -416,6 +466,24 @@ input[type='file'] {
     white-space: pre-wrap;
     word-wrap: break-word;
     color: #4a148c;
+}
+
+.expand-toggle-btn {
+  background: none;
+  border: none;
+  color: #7D3C98;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 8px;
+  font-weight: bold;
+  font-size: 0.9em;
+  text-align: right;
+  width: 100%;
+}
+
+.expand-toggle-btn:hover {
+  text-decoration: underline;
+  background-color: transparent;
 }
 
 

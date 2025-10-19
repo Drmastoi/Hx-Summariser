@@ -6,6 +6,12 @@ import {GoogleGenAI, Part, Type} from '@google/genai';
 import React, {useState, useMemo, useEffect} from 'react';
 import ReactDOM from 'react-dom/client';
 
+// Helper function to convert string to kebab-case for CSS classes
+const toKebabCase = (str: string) =>
+  str.toLowerCase()
+     .replace(/[^a-zA-Z0-9 ]/g, "")
+     .replace(/\s+/g, '-');
+
 // Define the structure of a single summary
 interface StructuredResponse {
   'Acute Issues': string[];
@@ -79,10 +85,28 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+const ExpandableContent = ({ content, maxLength }: { content: string; maxLength: number }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    if (!content || content.length <= maxLength) {
+        return <>{content}</>;
+    }
+
+    return (
+        <>
+            {isExpanded ? content : `${content.substring(0, maxLength)}...`}
+            <button onClick={() => setIsExpanded(!isExpanded)} className="expand-toggle-btn">
+                {isExpanded ? 'Show Less' : 'Read More'}
+            </button>
+        </>
+    );
+};
+
+
 function App() {
   // Form and API state
   const [prompt, setPrompt] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -129,14 +153,18 @@ function App() {
   }, [currentSummary]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+    if (e.target.files) {
+      setFiles(prevFiles => [...prevFiles, ...Array.from(e.target.files!)]);
     }
+  };
+
+  const handleRemoveFile = (indexToRemove: number) => {
+    setFiles(prevFiles => prevFiles.filter((_, index) => index !== indexToRemove));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() && !file) return;
+    if (!prompt.trim() && files.length === 0) return;
     if (!selectedPatientId && !newPatientName.trim()) {
         setError("Please enter a patient name.");
         return;
@@ -151,11 +179,13 @@ function App() {
       const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
       const parts: Part[] = [];
 
-      if (file) {
-        const base64Data = await fileToBase64(file);
-        parts.push({
-          inlineData: { mimeType: file.type, data: base64Data },
-        });
+      if (files.length > 0) {
+        for (const file of files) {
+          const base64Data = await fileToBase64(file);
+          parts.push({
+            inlineData: { mimeType: file.type, data: base64Data },
+          });
+        }
       }
 
       let finalPrompt = prompt;
@@ -209,7 +239,7 @@ function App() {
         setNewPatientName('');
       }
       setPrompt('');
-      clearFile();
+      clearFiles();
 
     } catch (err) {
       console.error('Error generating content:', err);
@@ -245,8 +275,8 @@ function App() {
     }
   };
 
-  const clearFile = () => {
-    setFile(null);
+  const clearFiles = () => {
+    setFiles([]);
     const fileInput = document.getElementById('file-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
   };
@@ -256,7 +286,7 @@ function App() {
     setViewingSummaryIndex(0);
     setError(null);
     setPrompt('');
-    clearFile();
+    clearFiles();
     setInsights(null);
   }
 
@@ -275,7 +305,7 @@ function App() {
     setNewPatientName('');
     setError(null);
     setPrompt('');
-    clearFile();
+    clearFiles();
     setInsights(null);
   }
 
@@ -367,28 +397,35 @@ function App() {
               disabled={loading}
               aria-label="Prompt input"
             />
-            <button type="submit" disabled={loading || (!prompt.trim() && !file)}>
+            <button type="submit" disabled={loading || (!prompt.trim() && files.length === 0)}>
               {loading ? 'Loading...' : (selectedPatient ? 'Update Summary' : 'Submit')}
             </button>
           </div>
           <div className="form-row">
             <label htmlFor="file-upload" className="file-upload-button" aria-disabled={loading}>
-              Upload Document
+              Upload Document(s)
             </label>
             <input
               id="file-upload"
               type="file"
               onChange={handleFileChange}
               disabled={loading}
+              multiple
             />
           </div>
         </form>
-        {file && (
-          <div className="file-info no-print">
-            <span title={file.name}>{file.name}</span>
-            <button onClick={clearFile} disabled={loading} className="clear-file-button" aria-label="Remove selected file">
-              &times;
-            </button>
+        {files.length > 0 && (
+          <div className="file-list-container no-print">
+            <ul>
+              {files.map((file, index) => (
+                <li key={`${file.name}-${index}`} className="file-info">
+                  <span title={file.name}>{file.name}</span>
+                  <button onClick={() => handleRemoveFile(index)} disabled={loading} className="clear-file-button" aria-label={`Remove file ${file.name}`}>
+                    &times;
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         <div className="response-container">
@@ -410,7 +447,7 @@ function App() {
                     </div>
                 )}
                 {Object.entries(currentSummary.summary).filter(([key]) => key !== 'Key Changes').map(([key, values]) => (
-                  <div key={key} className="response-section">
+                  <div key={key} className={`response-section section-${toKebabCase(key)}`}>
                     <h3>{key}</h3>
                     <ul>
                       {Array.isArray(values) && values.map((item, index) => (
@@ -428,22 +465,29 @@ function App() {
             <div className="ai-insights-container no-print">
                 <h4>AI-Powered Insights</h4>
                 {insightsLoading && <p>Generating suggestions...</p>}
-                {insights && <div className="ai-insights-content">{insights}</div>}
+                {insights && 
+                  <div className="ai-insights-content">
+                    <ExpandableContent content={insights} maxLength={400} />
+                  </div>
+                }
             </div>
           )}
-          {currentSummary && (
+          {currentSummary && selectedPatient && (
              <div className="timeline-container no-print">
                 <h4>Summary History</h4>
                 <ul>
-                    {selectedPatient?.summaries.map((summary, index) => (
-                        <li 
-                            key={summary.timestamp} 
-                            className={index === viewingSummaryIndex ? 'active' : ''}
-                            onClick={() => setViewingSummaryIndex(index)}
-                        >
-                           {new Date(summary.timestamp).toLocaleString()}
-                        </li>
-                    ))}
+                    {selectedPatient.summaries.slice().reverse().map((summary, reversedIndex) => {
+                        const originalIndex = selectedPatient.summaries.length - 1 - reversedIndex;
+                        return (
+                            <li 
+                                key={summary.timestamp} 
+                                className={originalIndex === viewingSummaryIndex ? 'active' : ''}
+                                onClick={() => setViewingSummaryIndex(originalIndex)}
+                            >
+                               {new Date(summary.timestamp).toLocaleString()}
+                            </li>
+                        );
+                    })}
                 </ul>
             </div>
           )}
