@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import {GoogleGenAI, Part, Type} from '@google/genai';
-import React, {useState, useMemo, useEffect} from 'react';
+import React, {useState, useMemo, useEffect, useRef} from 'react';
 import ReactDOM from 'react-dom/client';
 
 // Helper function to convert string to kebab-case for CSS classes
@@ -43,7 +43,7 @@ const baseSchema = {
   'Pending Tasks and action Plan': {
     type: Type.ARRAY,
     items: { type: Type.STRING },
-    description: 'List of pending tasks and the plan of action.'
+    description: 'List of pending tasks and the plan of action, including immediate and long-term plans.'
   },
   'Past medical history': {
     type: Type.ARRAY,
@@ -85,24 +85,6 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-const ExpandableContent = ({ content, maxLength }: { content: string; maxLength: number }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-
-    if (!content || content.length <= maxLength) {
-        return <>{content}</>;
-    }
-
-    return (
-        <>
-            {isExpanded ? content : `${content.substring(0, maxLength)}...`}
-            <button onClick={() => setIsExpanded(!isExpanded)} className="expand-toggle-btn">
-                {isExpanded ? 'Show Less' : 'Read More'}
-            </button>
-        </>
-    );
-};
-
-
 function App() {
   // Form and API state
   const [prompt, setPrompt] = useState('');
@@ -114,6 +96,17 @@ function App() {
   // AI Insights state
   const [insights, setInsights] = useState<string | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  
+  // Referral Letter state
+  const [referralLetter, setReferralLetter] = useState<string | null>(null);
+  const [referralSpecialty, setReferralSpecialty] = useState<string | null>(null);
+  const [referralLetterLoading, setReferralLetterLoading] = useState(false);
+  const [referralCopied, setReferralCopied] = useState(false);
+  const [showReferralInput, setShowReferralInput] = useState(false);
+  const [referralSpecialtyInput, setReferralSpecialtyInput] = useState('');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const referralContainerRef = useRef<HTMLDivElement>(null);
+
 
   // Patient management state with autosave from localStorage
   const [patients, setPatients] = useState<Patient[]>(() => {
@@ -135,6 +128,13 @@ function App() {
   useEffect(() => {
     localStorage.setItem('patientData', JSON.stringify(patients));
   }, [patients]);
+  
+  // Effect to scroll to the referral letter when it's generated
+  useEffect(() => {
+    if (referralLetter && referralContainerRef.current) {
+      referralContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [referralLetter]);
 
   const selectedPatient = useMemo(() => {
     return patients.find(p => p.id === selectedPatientId) || null;
@@ -147,9 +147,11 @@ function App() {
     return selectedPatient.summaries[viewingSummaryIndex];
   }, [selectedPatient, viewingSummaryIndex]);
 
-  // Clear insights when the viewed summary changes
+  // Clear insights and referral letter when the viewed summary changes
   useEffect(() => {
     setInsights(null);
+    setReferralLetter(null);
+    setReferralSpecialty(null);
   }, [currentSummary]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,6 +176,8 @@ function App() {
     setError(null);
     setCopied(false);
     setInsights(null);
+    setReferralLetter(null);
+    setReferralSpecialty(null);
 
     try {
       const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
@@ -188,14 +192,27 @@ function App() {
         }
       }
 
-      let finalPrompt = prompt;
+      let finalPrompt = '';
       let schemaForRequest = newSummaryResponseSchema;
       const patientToUpdate = selectedPatient;
       const latestExistingSummary = patientToUpdate?.summaries[0];
 
       if (patientToUpdate && latestExistingSummary) {
-        finalPrompt = `Based on the following new information, please provide an updated summary. Also, identify the key changes compared to the previous summary provided below.\n\nPREVIOUS SUMMARY:\n${JSON.stringify(latestExistingSummary.summary)}\n\nNEW INFORMATION/PROMPT:\n${prompt}`;
+        finalPrompt = `Act as a clinical assistant responsible for patient records. A patient has presented with new acute concerns. Based on these and their previous clinical summary, provide an updated summary.
+
+Crucially, within the "Pending Tasks and action Plan" section, you must explicitly document a detailed treatment plan for the new acute concerns, formatted clearly for inclusion in an Electronic Health Record (EHR). This plan must be actionable and follow standard clinical practice. Also, generate a long-term management plan and identify key changes from the previous summary.
+
+PREVIOUS SUMMARY:
+${JSON.stringify(latestExistingSummary.summary)}
+
+NEW ACUTE CONCERNS:
+${prompt}`;
         schemaForRequest = updateSummaryResponseSchema;
+      } else {
+        finalPrompt = `Act as a clinical assistant responsible for patient records. Create a concise, structured clinical summary from the information provided. For any acute issues identified, you must explicitly document a detailed treatment plan within the "Pending Tasks and action Plan" section. This plan must be formatted clearly for inclusion in an Electronic Health Record (EHR), be actionable, and follow standard clinical practice. Also, include a suggested long-term management plan.
+
+PATIENT INFORMATION:
+${prompt}`;
       }
       
       parts.push({text: finalPrompt});
@@ -258,18 +275,11 @@ function App() {
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const insightsPrompt = `You are a clinical decision support assistant operating within the UK healthcare system. Based on the provided clinical summary, generate actionable insights for a clinician. All recommendations must be explicitly aligned with the latest UK-based NICE (National Institute for Health and Care Excellence) and CKS (Clinical Knowledge Summaries) guidelines. The entire response must be in British English.
+        const insightsPrompt = `You are a clinical decision support assistant for UK clinicians. Based on the provided clinical summary, provide a very brief, rapid-fire action plan.
 
-Please structure your response with the following clear, Markdown-formatted sections:
+Your response must be in British English and explicitly aligned with UK NICE (National Institute for Health and Care Excellence) and CKS (Clinical Knowledge Summaries) guidelines.
 
-- **Potential Next Steps (NICE/CKS Aligned):**
-  - Detail suggested actions, further investigations, or potential referrals based on the relevant guidelines.
-
-- **Key Risks to Monitor:**
-  - Enumerate potential complications, adverse effects, or clinical red flags that require monitoring.
-
-- **Patient Communication & Counselling:**
-  - Provide key points for discussion with the patient, including potential questions they might have or information to share, framed in a patient-friendly manner suitable for a UK context.
+Please outline 5 critical bullet points for immediate management. Be extremely concise.
 
 ---
 **PATIENT SUMMARY:**
@@ -288,6 +298,125 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
     } finally {
         setInsightsLoading(false);
     }
+  };
+
+  const handleGenerateReferral = async () => {
+    if (!currentSummary || !selectedPatient || !referralSpecialtyInput.trim()) return;
+
+    setReferralLetterLoading(true);
+    setReferralLetter(null);
+    setReferralSpecialty(referralSpecialtyInput.trim());
+    setError(null);
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const referralPrompt = `You are an assistant for a UK clinician. Draft an extremely concise, to-the-point, UK-style referral letter to a ${referralSpecialtyInput.trim()} specialist for ${selectedPatient.name}.
+
+The entire letter must be a maximum of 3-4 lines. It should only contain the most critical information for the specialist. Use placeholders like [NHS Number] where needed.
+
+---
+**PATIENT SUMMARY:**
+${JSON.stringify(currentSummary.summary, null, 2)}`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro', // Upgraded model for higher quality
+            contents: referralPrompt,
+        });
+
+        setReferralLetter(response.text);
+        setShowReferralInput(false); // Hide form on success
+        setReferralSpecialtyInput(''); // Clear input on success
+
+    } catch (err) {
+        console.error("Error drafting referral letter:", err);
+        setError("Could not draft the referral letter at this time.");
+        setReferralSpecialty(null); // Clear specialty on error
+    } finally {
+        setReferralLetterLoading(false);
+    }
+  };
+
+  const handleCopyReferral = () => {
+    if (!referralLetter) return;
+    navigator.clipboard.writeText(referralLetter).then(() => {
+        setReferralCopied(true);
+        setTimeout(() => setReferralCopied(false), 2000);
+    }).catch(err => console.error('Failed to copy referral: ', err));
+  };
+
+  const handleExportPdf = () => {
+    if (typeof (window as any).html2pdf === 'undefined') {
+      setError("PDF export library is not available. Please check your internet connection and try again.");
+      return;
+    }
+
+    if (!currentSummary || !selectedPatient) {
+      alert("No summary to export.");
+      return;
+    }
+
+    setIsExportingPdf(true);
+    setError(null);
+
+    // Create a container for the export content
+    const exportContainer = document.createElement('div');
+
+    // Clone all the printable elements
+    const header = document.querySelector('.printable-header')?.cloneNode(true);
+    const responseArea = document.querySelector('.response-area')?.cloneNode(true);
+    const insights = document.querySelector('.ai-insights-container')?.cloneNode(true);
+    const referral = document.querySelector('.referral-letter-container')?.cloneNode(true);
+
+    // Append cloned elements to the container
+    if (header) exportContainer.appendChild(header);
+    if (responseArea) {
+      // Remove the placeholder text from the clone if it exists
+      const noSummaryText = (responseArea as HTMLElement).querySelector('.no-print');
+      if (noSummaryText) {
+        noSummaryText.remove();
+      }
+      exportContainer.appendChild(responseArea);
+    }
+    if (insights) exportContainer.appendChild(insights);
+    if (referral) exportContainer.appendChild(referral);
+
+    // Add print-specific styles to the container
+    const style = document.createElement('style');
+    style.innerHTML = `
+      body { font-family: 'Times New Roman', Times, serif; color: #000; }
+      div { background-color: #fff !important; border: none !important; box-shadow: none !important; }
+      h1, h2, h3, h4 { color: #000 !important; border-color: #ccc !important; }
+      h1 { font-size: 24pt; }
+      h2 { font-size: 18pt; }
+      h3, h4 { font-size: 14pt; }
+      li { line-height: 1.5; }
+      ul { padding-left: 20px; }
+      .summary-timestamp { text-align: left !important; margin-bottom: 2rem; }
+      .key-changes-section { page-break-after: auto; }
+      .ai-insights-container, .referral-letter-container { page-break-before: always; }
+      .referral-text { font-family: 'Courier New', Courier, monospace; white-space: pre-wrap; word-wrap: break-word; }
+    `;
+    exportContainer.prepend(style);
+
+    const patientName = selectedPatient.name.replace(/\s+/g, '_');
+    const filename = `${patientName}_Clinical_Summary.pdf`;
+
+    const options = {
+      margin: 0.75,
+      filename: filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+
+    // Type assertion for html2pdf on window
+    (window as any).html2pdf().from(exportContainer).set(options).save().then(() => {
+      setIsExportingPdf(false);
+    }).catch((err: Error) => {
+      console.error("PDF generation failed:", err);
+      setError("Sorry, there was an error exporting the PDF.");
+      setIsExportingPdf(false);
+    });
   };
 
   const clearFiles = () => {
@@ -382,7 +511,7 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
       </div>
       <div className="main-content">
         <div className="printable-header">
-            <h1>{selectedPatient ? `Updating: ${selectedPatient.name}` : 'New Patient Summary'}</h1>
+            <h1>{selectedPatient ? selectedPatient.name : 'New Patient Summary'}</h1>
         </div>
         
         {selectedPatient && (
@@ -408,12 +537,12 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
               type="text"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Enter your prompt..."
+              placeholder="Enter acute concerns (e.g., new confusion, new cough)..."
               disabled={loading}
-              aria-label="Prompt input"
+              aria-label="Acute concerns input"
             />
             <button type="submit" disabled={loading || (!prompt.trim() && files.length === 0)}>
-              {loading ? 'Loading...' : (selectedPatient ? 'Update Summary' : 'Submit')}
+              {loading ? (selectedPatient ? 'Updating Summary...' : 'Generating Summary...') : (selectedPatient ? 'Update Summary' : 'Submit')}
             </button>
           </div>
           <div className="form-row">
@@ -445,6 +574,7 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
         )}
         <div className="response-container">
           <div className="response-area" aria-live="polite">
+            <h2 className="print-only-title">{selectedPatient ? `Clinical Summary for ${selectedPatient.name}` : 'Clinical Summary'}</h2>
             {error && <div className="error-message">{error}</div>}
             {currentSummary ? (
               <div>
@@ -473,17 +603,31 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
                 ))}
               </div>
             ) : (
-              !error && <p>Select a patient or create a new one to see their summary.</p>
+              !error && <p className="no-print">Select a patient or create a new one to see their summary.</p>
             )}
           </div>
           {(insightsLoading || insights) && (
-            <div className="ai-insights-container no-print">
+            <div className="ai-insights-container">
                 <h4>AI-Powered Insights</h4>
-                {insightsLoading && <p>Generating suggestions...</p>}
+                {insightsLoading && <p className="no-print">Fetching insights...</p>}
                 {insights && 
                   <div className="ai-insights-content">
-                    <ExpandableContent content={insights} maxLength={400} />
+                    {insights}
                   </div>
+                }
+            </div>
+          )}
+          {(referralLetterLoading || referralLetter) && (
+            <div className="referral-letter-container" ref={referralContainerRef}>
+                <h4>Draft Referral Letter to {referralSpecialty}</h4>
+                {referralLetterLoading && <p className="no-print">Drafting letter...</p>}
+                {referralLetter &&
+                    <div className="referral-letter-content">
+                        <pre className="referral-text">{referralLetter}</pre>
+                        <button onClick={handleCopyReferral} className={`copy-button no-print ${referralCopied ? 'copied' : ''}`} disabled={referralCopied}>
+                            {referralCopied ? 'Copied!' : 'Copy Letter'}
+                        </button>
+                    </div>
                 }
             </div>
           )}
@@ -509,13 +653,35 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
           {currentSummary && (
             <div className="response-actions no-print">
               <button onClick={handleGetAiInsights} disabled={insightsLoading} className="ai-button" aria-label="Get AI insights for the current summary">
-                {insightsLoading ? 'Thinking...' : 'Get AI Insights'}
+                {insightsLoading ? 'Fetching insights...' : 'Get AI Insights'}
               </button>
+               {!showReferralInput ? (
+                <button onClick={() => setShowReferralInput(true)} disabled={referralLetterLoading} className="referral-button" aria-label="Draft a referral letter">
+                  Draft Referral Letter
+                </button>
+              ) : (
+                <div className="inline-form">
+                  <input
+                    type="text"
+                    value={referralSpecialtyInput}
+                    onChange={(e) => setReferralSpecialtyInput(e.target.value)}
+                    placeholder="Enter specialty (e.g., Cardiology)"
+                    aria-label="Referral specialty"
+                    disabled={referralLetterLoading}
+                  />
+                  <button onClick={handleGenerateReferral} disabled={!referralSpecialtyInput.trim() || referralLetterLoading}>
+                    {referralLetterLoading ? 'Drafting...' : 'Generate'}
+                  </button>
+                  <button onClick={() => { setShowReferralInput(false); setReferralSpecialtyInput(''); }} className="cancel-button" disabled={referralLetterLoading}>
+                    Cancel
+                  </button>
+                </div>
+              )}
               <button onClick={handleCopy} className={`copy-button ${copied ? 'copied' : ''}`} disabled={copied} aria-label="Copy response to clipboard">
                 {copied ? 'Copied!' : 'Copy'}
               </button>
-              <button onClick={() => window.print()} className="export-button" aria-label="Export response to PDF">
-                Export to PDF
+              <button onClick={handleExportPdf} className="export-button" disabled={isExportingPdf} aria-label="Export response to PDF">
+                {isExportingPdf ? 'Exporting...' : 'Export to PDF'}
               </button>
             </div>
           )}
