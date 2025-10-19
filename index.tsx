@@ -87,6 +87,10 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // AI Insights state
+  const [insights, setInsights] = useState<string | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+
   // Patient management state with autosave from localStorage
   const [patients, setPatients] = useState<Patient[]>(() => {
     try {
@@ -119,6 +123,11 @@ function App() {
     return selectedPatient.summaries[viewingSummaryIndex];
   }, [selectedPatient, viewingSummaryIndex]);
 
+  // Clear insights when the viewed summary changes
+  useEffect(() => {
+    setInsights(null);
+  }, [currentSummary]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
@@ -136,6 +145,7 @@ function App() {
     setLoading(true);
     setError(null);
     setCopied(false);
+    setInsights(null);
 
     try {
       const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
@@ -209,6 +219,32 @@ function App() {
     }
   };
 
+  const handleGetAiInsights = async () => {
+    if (!currentSummary) return;
+
+    setInsightsLoading(true);
+    setInsights(null);
+    setError(null);
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const insightsPrompt = `Based on the following clinical summary, provide actionable insights. Include sections for "Potential Next Steps", "Key Risks to Monitor", and "Suggested Patient Questions". Format the output clearly.\n\nSUMMARY:\n${JSON.stringify(currentSummary.summary, null, 2)}`;
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: insightsPrompt,
+        });
+
+        setInsights(response.text);
+
+    } catch (err) {
+        console.error("Error generating insights:", err);
+        setError("Could not generate AI insights at this time.");
+    } finally {
+        setInsightsLoading(false);
+    }
+  };
+
   const clearFile = () => {
     setFile(null);
     const fileInput = document.getElementById('file-upload') as HTMLInputElement;
@@ -221,6 +257,7 @@ function App() {
     setError(null);
     setPrompt('');
     clearFile();
+    setInsights(null);
   }
 
   const handleDeletePatient = (patientIdToDelete: string, patientName: string) => {
@@ -239,6 +276,7 @@ function App() {
     setError(null);
     setPrompt('');
     clearFile();
+    setInsights(null);
   }
 
   const handleCopy = () => {
@@ -386,6 +424,13 @@ function App() {
               !error && <p>Select a patient or create a new one to see their summary.</p>
             )}
           </div>
+          {(insightsLoading || insights) && (
+            <div className="ai-insights-container no-print">
+                <h4>AI-Powered Insights</h4>
+                {insightsLoading && <p>Generating suggestions...</p>}
+                {insights && <div className="ai-insights-content">{insights}</div>}
+            </div>
+          )}
           {currentSummary && (
              <div className="timeline-container no-print">
                 <h4>Summary History</h4>
@@ -404,6 +449,9 @@ function App() {
           )}
           {currentSummary && (
             <div className="response-actions no-print">
+              <button onClick={handleGetAiInsights} disabled={insightsLoading} className="ai-button" aria-label="Get AI insights for the current summary">
+                {insightsLoading ? 'Thinking...' : 'Get AI Insights'}
+              </button>
               <button onClick={handleCopy} className={`copy-button ${copied ? 'copied' : ''}`} disabled={copied} aria-label="Copy response to clipboard">
                 {copied ? 'Copied!' : 'Copy'}
               </button>

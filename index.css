@@ -233,11 +233,10 @@ input[type='file'] {
   margin-top: 1rem;
 }
 
-.copy-button, .export-button {
+.copy-button, .export-button, .ai-button {
   padding: 8px 16px;
   font-size: 0.9rem;
   font-weight: bold;
-  background-color: #1a73e8;
   color: #fff;
   border: none;
   border-radius: 4px;
@@ -245,8 +244,16 @@ input[type='file'] {
   transition: background-color 0.2s;
 }
 
+.copy-button {
+  background-color: #1a73e8;
+}
+
 .export-button {
   background-color: #34a853;
+}
+
+.ai-button {
+    background-color: #8E44AD; /* A purple color */
 }
 
 .copy-button:hover:not(:disabled) {
@@ -254,6 +261,9 @@ input[type='file'] {
 }
 .export-button:hover:not(:disabled) {
   background-color: #2c8c42;
+}
+.ai-button:hover:not(:disabled) {
+  background-color: #7D3C98;
 }
 
 
@@ -386,6 +396,28 @@ input[type='file'] {
     color: #185abc;
     font-weight: bold;
 }
+
+.ai-insights-container {
+    margin-top: 1.5rem;
+    padding: 1.5rem;
+    background-color: #f3e5f5; /* Light purple background */
+    border: 1px solid #ce93d8;
+    border-radius: 4px;
+    text-align: left;
+}
+.ai-insights-container h4 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: #7D3C98;
+    border-bottom: 1px solid #ce93d8;
+    padding-bottom: 0.5rem;
+}
+.ai-insights-content {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: #4a148c;
+}
+
 
 @media (max-width: 768px) {
   .app-layout {
