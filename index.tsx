@@ -123,6 +123,82 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function LoginModal({ onAuthenticate }: { onAuthenticate: () => void }) {
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    passwordInputRef.current?.focus();
+  }, []);
+
+  const handleSubmit = () => {
+    if (!password) return;
+    
+    if (password === AUTH_PASSWORD) {
+      setIsClosing(true);
+      setTimeout(() => {
+        sessionStorage.setItem('hx_auth', 'true');
+        onAuthenticate();
+      }, 400);
+    } else {
+      setError(true);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && password) {
+      handleSubmit();
+    }
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (error) setError(false);
+  };
+
+  return (
+    <div className={`auth-overlay ${isClosing ? 'closing' : ''}`}>
+      <div className="auth-modal">
+        <div className="auth-lock-icon">🔒</div>
+        <h2 className="auth-title">Authentication Required</h2>
+        <p className="auth-subtitle">AI Clinical Summariser</p>
+        
+        <div className="auth-input-group">
+          <label htmlFor="password-input" className="auth-label">Password</label>
+          <div className="password-input-wrapper">
+            <input
+              ref={passwordInputRef}
+              id="password-input"
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={handlePasswordChange}
+              onKeyPress={handleKeyPress}
+              placeholder="Enter password"
+              className="auth-input"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="password-toggle-btn"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
+          {error && <span className="auth-error">Incorrect password. Please try again.</span>}
+        </div>
+        
+        <button onClick={handleSubmit} className="auth-submit-btn" disabled={!password}>
+          Unlock
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   // Form and API state
   const [prompt, setPrompt] = useState('');
