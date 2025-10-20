@@ -834,6 +834,11 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
       // localStorage.removeItem('gdpr_acknowledged');
     }
   };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('hx_auth');
+    setIsAuthenticated(false);
+  };
   
   const filteredPatients = patients.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
