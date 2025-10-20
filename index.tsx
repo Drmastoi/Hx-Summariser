@@ -5,6 +5,7 @@
 import {GoogleGenAI, Part, Type} from '@google/genai';
 import React, {useState, useMemo, useEffect, useRef} from 'react';
 import ReactDOM from 'react-dom/client';
+import { AUTH_PASSWORD } from './auth-config';
 
 // Helper function to convert string to kebab-case for CSS classes
 const toKebabCase = (str: string) =>
@@ -122,6 +123,82 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function LoginModal({ onAuthenticate }: { onAuthenticate: () => void }) {
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    passwordInputRef.current?.focus();
+  }, []);
+
+  const handleSubmit = () => {
+    if (!password) return;
+    
+    if (password === AUTH_PASSWORD) {
+      setIsClosing(true);
+      setTimeout(() => {
+        sessionStorage.setItem('hx_auth', 'true');
+        onAuthenticate();
+      }, 400);
+    } else {
+      setError(true);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && password) {
+      handleSubmit();
+    }
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (error) setError(false);
+  };
+
+  return (
+    <div className={`auth-overlay ${isClosing ? 'closing' : ''}`}>
+      <div className="auth-modal">
+        <div className="auth-lock-icon">🔒</div>
+        <h2 className="auth-title">Authentication Required</h2>
+        <p className="auth-subtitle">AI Clinical Summariser</p>
+        
+        <div className="auth-input-group">
+          <label htmlFor="password-input" className="auth-label">Password</label>
+          <div className="password-input-wrapper">
+            <input
+              ref={passwordInputRef}
+              id="password-input"
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={handlePasswordChange}
+              onKeyPress={handleKeyPress}
+              placeholder="Enter password"
+              className="auth-input"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="password-toggle-btn"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
+          {error && <span className="auth-error">Incorrect password. Please try again.</span>}
+        </div>
+        
+        <button onClick={handleSubmit} className="auth-submit-btn" disabled={!password}>
+          Unlock
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   // Form and API state
   const [prompt, setPrompt] = useState('');
@@ -174,6 +251,11 @@ function App() {
   // Patient Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPatientDetails, setEditingPatientDetails] = useState<Omit<Patient, 'summaries'> | null>(null);
+
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem('hx_auth') === 'true';
+  });
 
   // GDPR & Privacy State
   const [showGdprBanner, setShowGdprBanner] = useState(false);
@@ -587,11 +669,6 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
         contentHtml += '</ul></div>';
     }
   
-    if (referralLetter) {
-      const specialty = referralSpecialty || 'Specialist';
-      contentHtml += `<div class="page-break"></div><div class="section"><h3 class="section-title">Draft Referral Letter to ${escapeHtml(specialty)}</h3><div class="ai-content-box">${escapeHtml(referralLetter).replace(/\n/g, '<br>')}</div></div>`;
-    }
-  
     contentHtml += `</div>`;
   
     const styles = `
@@ -752,6 +829,11 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
       // localStorage.removeItem('gdpr_acknowledged');
     }
   };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('hx_auth');
+    setIsAuthenticated(false);
+  };
   
   const filteredPatients = patients.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -909,6 +991,7 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
   
   return (
     <>
+      {!isAuthenticated && <LoginModal onAuthenticate={() => setIsAuthenticated(true)} />}
       {renderEditPatientModal()}
       {renderPrivacyModal()}
       <div className={`app-layout ${!isSidebarOpen ? 'sidebar-collapsed' : ''}`}>
@@ -961,6 +1044,20 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
             </button>
             <h1>AI Clinical Summariser</h1>
             <p>Generate, update, and manage patient notes with AI-powered efficiency.</p>
+            {isAuthenticated && (
+              <button 
+                onClick={handleLogout} 
+                className="logout-btn"
+                aria-label="Logout"
+                title="Logout"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <polyline points="16 17 21 12 16 7"></polyline>
+                  <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+              </button>
+            )}
           </header>
           <main className="main-grid">
             <div className="main-content-stack">
