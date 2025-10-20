@@ -5,6 +5,7 @@
 import {GoogleGenAI, Part, Type} from '@google/genai';
 import React, {useState, useMemo, useEffect, useRef} from 'react';
 import ReactDOM from 'react-dom/client';
+import { AUTH_PASSWORD } from './auth-config';
 
 // Helper function to convert string to kebab-case for CSS classes
 const toKebabCase = (str: string) =>
