@@ -669,11 +669,6 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
         contentHtml += '</ul></div>';
     }
   
-    if (referralLetter) {
-      const specialty = referralSpecialty || 'Specialist';
-      contentHtml += `<div class="page-break"></div><div class="section"><h3 class="section-title">Draft Referral Letter to ${escapeHtml(specialty)}</h3><div class="ai-content-box">${escapeHtml(referralLetter).replace(/\n/g, '<br>')}</div></div>`;
-    }
-  
     contentHtml += `</div>`;
   
     const styles = `
@@ -996,6 +991,7 @@ ${JSON.stringify(currentSummary.summary, null, 2)}`;
   
   return (
     <>
+      {!isAuthenticated && <LoginModal onAuthenticate={() => setIsAuthenticated(true)} />}
       {renderEditPatientModal()}
       {renderPrivacyModal()}
       <div className={`app-layout ${!isSidebarOpen ? 'sidebar-collapsed' : ''}`}>
