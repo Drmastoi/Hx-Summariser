@@ -252,6 +252,11 @@ function App() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPatientDetails, setEditingPatientDetails] = useState<Omit<Patient, 'summaries'> | null>(null);
 
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem('hx_auth') === 'true';
+  });
+
   // GDPR & Privacy State
   const [showGdprBanner, setShowGdprBanner] = useState(false);
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
